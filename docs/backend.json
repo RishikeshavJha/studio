@@ -1,0 +1,225 @@
+{
+  "entities": {
+    "Participant": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Participant",
+      "type": "object",
+      "description": "Represents a single participant or the team leader who registered for the hackathon, storing their personal, academic, team, and payment information. This entity is the main record for each registration.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Participant entity."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "The full name of the participant or team leader."
+        },
+        "email": {
+          "type": "string",
+          "description": "The primary email address of the participant.",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "The phone number of the participant, including country code."
+        },
+        "gender": {
+          "type": "string",
+          "description": "The gender of the participant (e.g., male, female, other)."
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "description": "The participant's date of birth in YYYY-MM-DD format (within 2000-2010 range).",
+          "format": "date"
+        },
+        "college": {
+          "type": "string",
+          "description": "The name of the participant's college or university."
+        },
+        "degree": {
+          "type": "string",
+          "description": "The degree program the participant is pursuing (e.g., B.Tech, B.E.)."
+        },
+        "branch": {
+          "type": "string",
+          "description": "The academic branch or department of the participant (e.g., Computer Science, Electrical Engineering)."
+        },
+        "year": {
+          "type": "string",
+          "description": "The current year of study for the participant (e.g., 1st Year, 2nd Year, 3rd Year, Final Year)."
+        },
+        "teamName": {
+          "type": "string",
+          "description": "The name of the participant's team."
+        },
+        "teamLeaderName": {
+          "type": "string",
+          "description": "The name of the team leader. This will typically match the fullName of this Participant entity."
+        },
+        "numberOfTeamMembers": {
+          "type": "number",
+          "description": "The total number of members in the team, including the team leader. (Value is 1 + count of referenced TeamMember entities)."
+        },
+        "teamMemberIds": {
+          "type": "array",
+          "description": "References to other TeamMember entities associated with this participant's team, excluding the team leader. (Relationship: Participant 1:N TeamMember)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "linkedinProfile": {
+          "type": "string",
+          "description": "URL to the participant's LinkedIn profile.",
+          "format": "uri"
+        },
+        "githubProfile": {
+          "type": "string",
+          "description": "URL to the participant's GitHub profile.",
+          "format": "uri"
+        },
+        "portfolioWebsite": {
+          "type": "string",
+          "description": "URL to the participant's personal portfolio website.",
+          "format": "uri"
+        },
+        "paymentStatus": {
+          "type": "string",
+          "description": "The current payment status of the registration (e.g., pending, completed, failed)."
+        },
+        "registrationFee": {
+          "type": "number",
+          "description": "The fixed registration fee amount (e.g., 299)."
+        },
+        "currency": {
+          "type": "string",
+          "description": "The currency code for the registration fee (e.g., INR)."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the participant's registration record was first created.",
+          "format": "date-time"
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "Timestamp when the participant's registration data was fully submitted.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "fullName",
+        "email",
+        "phone",
+        "gender",
+        "dateOfBirth",
+        "college",
+        "degree",
+        "branch",
+        "year",
+        "teamName",
+        "teamLeaderName",
+        "numberOfTeamMembers",
+        "teamMemberIds",
+        "paymentStatus",
+        "registrationFee",
+        "currency",
+        "createdAt",
+        "submittedAt"
+      ]
+    },
+    "TeamMember": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TeamMember",
+      "type": "object",
+      "description": "Represents an individual team member, typically excluding the main participant/team leader who registered the team. This entity stores details for additional team members.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the TeamMember entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The full name of the team member."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the team member.",
+          "format": "email"
+        },
+        "participantId": {
+          "type": "string",
+          "description": "Reference to the Participant entity who registered this team member. This establishes a 1:N relationship where one Participant can register multiple TeamMembers. (Relationship: Participant 1:N TeamMember)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "participantId"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/participants/{participantId}",
+        "definition": {
+          "entityName": "Participant",
+          "schema": {
+            "$ref": "#/backend/entities/Participant"
+          },
+          "description": "Represents the main participant or team leader who registered. The document ID `{participantId}` MUST match the `request.auth.uid` of the registering user, and the `id` field within the document also matches this `participantId`. Includes references to `TeamMember` IDs in the `teamMemberIds` array.",
+          "params": [
+            {
+              "name": "participantId",
+              "description": "The unique ID of the participant, which must correspond to the Firebase Authentication UID of the registering user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/participants/{participantId}/teamMembers/{teamMemberId}",
+        "definition": {
+          "entityName": "TeamMember",
+          "schema": {
+            "$ref": "#/backend/entities/TeamMember"
+          },
+          "description": "Represents an individual team member registered by a participant. The `{participantId}` in the path refers to the registering team leader, and the `participantId` field within this document is denormalized to match the parent `participantId` for authorization independence. The `{teamMemberId}` is the unique ID for this specific team member document.",
+          "params": [
+            {
+              "name": "participantId",
+              "description": "The unique ID of the parent participant (team leader) who registered this team member. This must match the `request.auth.uid` for authorized access."
+            },
+            {
+              "name": "teamMemberId",
+              "description": "The unique ID of this specific team member document."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/admins/{adminId}",
+        "definition": {
+          "entityName": "admin",
+          "schema": {
+            "$ref": "#/backend/entities/admin"
+          },
+          "description": "A collection used for Database Access Control (DBAC) to identify administrators. The existence of a document at `/admins/{request.auth.uid}` grants elevated privileges (e.g., viewing all participant data) without relying on custom claims. Documents typically contain minimal or no data, relying on existence for authorization checks.",
+          "params": [
+            {
+              "name": "adminId",
+              "description": "The unique ID of an authenticated user designated as an administrator. This must correspond to the Firebase Authentication UID."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The recommended Firestore structure prioritizes Authorization Independence and Query-Aware Security Rules (QAPs) by structuring data explicitly around ownership and segregating access patterns.The core `Participant` entity will reside in the `/participants/{participantId}` collection, where `participantId` is designed to be the authenticated user's unique ID (`request.auth.uid`). This ensures that each participant implicitly owns and can only access their own registration record, fulfilling the \"Private Data\" access model. The `id` field within the `Participant` document will also match this `participantId`, reinforcing self-ownership and simplifying security rules significantly by eliminating the need for `get()` calls to determine ownership.Team members, represented by the `TeamMember` entity, are stored in a subcollection: `/participants/{participantId}/teamMembers/{teamMemberId}`. This hierarchical path directly links team members to their registering participant/team leader. To ensure Authorization Independence for `TeamMember` documents, each `TeamMember` document will denormalize its `participantId` from its parent `Participant`. This allows rules applied to the `teamMembers` subcollection to verify ownership simply by comparing `request.auth.uid` with the parent `participantId` (from the path) or the `participantId` field within the `TeamMember` document itself, again avoiding `get()` calls.QAPs are supported through structural segregation. Normal users (participants) will only be able to query (list and get) their own `Participant` document and its associated `TeamMember` subcollection, as the `participantId` in the path directly corresponds to their `request.auth.uid`. For the administrative \"Real-time Participant Dashboard\" requiring access to *all* participant data, a separate collection `/admins/{adminId}` is introduced. Documents in this collection simply signify an administrator's `uid`. Security rules can then check for the existence of `exists(/databases/$(database)/documents/admins/$(request.auth.uid))` to grant broader read/write access to the entire `/participants` collection (and its subcollections) for authenticated administrators. This approach clearly separates user-specific data access from global administrative access, preventing rules from acting as filters and maintaining performance and predictability.The `Participant` document's `teamMemberIds` array will store the `id` values of the `TeamMember` documents in the subcollection, providing a clear reference while avoiding embedding complex objects, thereby maintaining predictable schemas and adhering to the `TeamMember` entity's definition."
+  }
+}

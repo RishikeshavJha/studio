@@ -1,0 +1,109 @@
+rules_version = '2';
+
+/**
+ * BytePunk Hackathon Registration Security Rules
+ *
+ * Core Philosophy:
+ * This ruleset implements a strict user-ownership model combined with administrative 
+ * overrides. Access is primarily governed by the relationship between the authenticated 
+ * user's UID and the document's location in the hierarchy.
+ *
+ * Data Structure:
+ * - /admins/{adminId}: Administrative accounts identified by document existence.
+ * - /participants/{participantId}: Private registration records owned by the user.
+ * - /participants/{participantId}/teamMembers/{teamMemberId}: Sub-records for team 
+ *   rosters, managed by the team leader (the participant).
+ *
+ * Key Security Decisions:
+ * 1. Ownership via Path: All participant data is nested under their specific UID, 
+ *    ensuring they cannot access or modify other teams' data.
+ * 2. Administrative Elevation: A dedicated /admins collection allows specific UIDs 
+ *    to bypass ownership checks for global data management and dashboarding.
+ * 3. Relational Integrity: On creation, the system enforces that the document's 
+ *    internal ID matches the user's UID to prevent spoofing or orphaned records.
+ * 4. Prototyping Flexibility: While authorization is strictly enforced, the 
+ *    structure of registration fields (names, emails, etc.) remains flexible to 
+ *    allow for rapid iteration of the registration form.
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+
+    /** @description Checks if the user is authenticated. */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /** @description Checks if the user's UID matches the provided ID. */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** @description Checks if the user is an owner and the document exists (for updates/deletes). */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    /** @description Checks if the user exists in the admin collection for elevated privileges. */
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // --- Collection Rules ---
+
+    /**
+     * @description Rules for the Admin collection. Used for DBAC existence checks.
+     * @path /admins/{adminId}
+     * @allow get (isSignedIn) - To allow the app to check if the current user is an admin.
+     * @deny create, update, delete - Admin status should be managed via Firebase Console or CLI.
+     * @principle Restricts administrative role assignment to secure, out-of-band channels.
+     */
+    match /admins/{adminId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    /**
+     * @description Rules for the primary Participant (Team Leader) records.
+     * @path /participants/{participantId}
+     * @allow create (isOwner) - Users can register themselves once.
+     * @allow update, delete (isExistingOwner or isAdmin) - Only the user or an admin can modify.
+     * @deny list (non-admins) - Prevents users from discovering other participants.
+     * @principle Enforces strict self-ownership and relational integrity between UID and ID field.
+     */
+    match /participants/{participantId} {
+      allow get: if isOwner(participantId) || isAdmin();
+      allow list: if isAdmin();
+      
+      allow create: if isOwner(participantId) 
+                    && request.resource.data.id == participantId;
+      
+      allow update: if (isExistingOwner(participantId) || isAdmin())
+                    && request.resource.data.id == resource.data.id; // Enforce immutable ID
+      
+      allow delete: if isExistingOwner(participantId) || isAdmin();
+
+      /**
+       * @description Rules for Team Members associated with a specific participant.
+       * @path /participants/{participantId}/teamMembers/{teamMemberId}
+       * @allow create, update, delete (isOwner of parent) - Only the team leader can manage the roster.
+       * @deny create (mismatched participantId) - Prevents adding members to someone else's team.
+       * @principle Uses path-based authorization to secure subcollections via parent ownership.
+       */
+      match /teamMembers/{teamMemberId} {
+        allow get, list: if isOwner(participantId) || isAdmin();
+        
+        allow create: if isOwner(participantId)
+                      && request.resource.data.participantId == participantId;
+        
+        allow update: if (isExistingOwner(participantId) || isAdmin())
+                      && request.resource.data.participantId == resource.data.participantId;
+        
+        allow delete: if isExistingOwner(participantId) || isAdmin();
+      }
+    }
+  }
+}
