@@ -4,32 +4,32 @@
 
 @layer base {
   :root {
-    --background: 260 18% 15%; /* Dark Slate Blue (#221E2B equivalent approx) */
+    --background: 240 10% 4%; /* Deep black-blue */
     --foreground: 0 0% 100%;
-    --card: 260 18% 18%;
+    --card: 240 10% 7%;
     --card-foreground: 0 0% 100%;
-    --popover: 260 18% 15%;
+    --popover: 240 10% 4%;
     --popover-foreground: 0 0% 100%;
-    --primary: 259 70% 50%; /* Modern Indigo (#5E26D9) */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 206 100% 74%; /* Electric Blue (#7AC5FF) */
-    --secondary-foreground: 260 18% 15%;
-    --muted: 260 18% 25%;
-    --muted-foreground: 260 10% 70%;
-    --accent: 206 100% 74%;
-    --accent-foreground: 260 18% 15%;
+    --primary: 56 100% 48%; /* Cyberpunk Yellow #fcee0a */
+    --primary-foreground: 240 10% 4%;
+    --secondary: 180 100% 50%; /* Bright Cyan */
+    --secondary-foreground: 240 10% 4%;
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 5% 70%;
+    --accent: 340 100% 50%; /* Electric Pink */
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 260 18% 25%;
-    --input: 260 18% 25%;
-    --ring: 259 70% 50%;
-    --radius: 0.75rem;
+    --border: 56 100% 48% / 0.2;
+    --input: 240 10% 15%;
+    --ring: 56 100% 48%;
+    --radius: 0px; /* Sharp corners for industrial look */
 
-    --chart-1: 259 70% 50%;
-    --chart-2: 206 100% 74%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 56 100% 48%;
+    --chart-2: 180 100% 50%;
+    --chart-3: 340 100% 50%;
+    --chart-4: 280 100% 60%;
+    --chart-5: 20 100% 50%;
   }
 }
 
@@ -39,14 +39,32 @@
   }
   body {
     @apply bg-background text-foreground font-body antialiased;
+    background-image: 
+      linear-gradient(rgba(252, 238, 10, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(252, 238, 10, 0.03) 1px, transparent 1px);
+    background-size: 30px 30px;
   }
 }
 
-.gradient-bg {
-  background: radial-gradient(circle at top left, hsla(259, 70%, 50%, 0.15), transparent),
-              radial-gradient(circle at bottom right, hsla(206, 100%, 74%, 0.1), transparent);
+.cyber-border {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+  border: 2px solid hsl(var(--primary));
 }
 
-.glass-card {
-  @apply bg-card/60 backdrop-blur-md border border-white/10;
+.cyber-button {
+  @apply relative overflow-hidden transition-all duration-300;
+  clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+}
+
+.cyber-button:hover {
+  @apply bg-primary text-primary-foreground shadow-[0_0_15px_rgba(252,238,10,0.5)];
+}
+
+.text-glitch {
+  text-shadow: 2px 0 #ff003c, -2px 0 #00ebeb;
+}
+
+.bg-grid {
+  background-size: 40px 40px;
+  background-image: radial-gradient(circle, #fcee0a11 1px, rgba(0, 0, 0, 0) 1px);
 }

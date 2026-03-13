@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { auth, db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { useFirestore, useUser, useMemoFirebase } from "@/firebase";
+import { collection, serverTimestamp } from "firebase/firestore";
+import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { generateTeamNameIdeas } from "@/ai/flows/generate-team-name-ideas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Sparkles, Plus, Trash2, ArrowRight, ArrowLeft, Loader2, CreditCard } from "lucide-react";
+import { Sparkles, Plus, Trash2, ArrowRight, ArrowLeft, Loader2, CreditCard, Cpu } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 const formSchema = z.object({
@@ -46,12 +47,14 @@ export function RegistrationForm() {
   const [teamNameLoading, setTeamNameLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const { toast } = useToast();
+  const firestore = useFirestore();
+  const { user } = useUser();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       fullName: "",
-      email: auth.currentUser?.email || "",
+      email: user?.email || "",
       phone: "",
       gender: "",
       dateOfBirth: "",
@@ -75,9 +78,15 @@ export function RegistrationForm() {
   });
 
   useEffect(() => {
+    if (user?.email) {
+      form.setValue("email", user.email);
+    }
+  }, [user, form]);
+
+  useEffect(() => {
     const leaderName = form.watch("fullName");
     form.setValue("teamLeaderName", leaderName);
-  }, [form.watch("fullName")]);
+  }, [form.watch("fullName"), form]);
 
   const handleNext = async () => {
     let fieldsToValidate: any[] = [];
@@ -92,7 +101,7 @@ export function RegistrationForm() {
   const handleBack = () => setStep(step - 1);
 
   const generateAITeamNames = async () => {
-    const theme = prompt("What's your project theme or hackathon category?");
+    const theme = window.prompt("What's your project theme or hackathon category?");
     if (!theme) return;
 
     setTeamNameLoading(true);
@@ -100,34 +109,39 @@ export function RegistrationForm() {
       const result = await generateTeamNameIdeas({ keywordsOrTheme: theme });
       setAiSuggestions(result.teamNames);
     } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to generate names." });
+      toast({ variant: "destructive", title: "Neural Link Failure", description: "Failed to connect to AI matrix." });
     } finally {
       setTeamNameLoading(false);
     }
   };
 
   const processPayment = async (data: FormValues) => {
+    if (!user) {
+      toast({ variant: "destructive", title: "Auth Required", description: "You must be jacked in (logged in) to register." });
+      return;
+    }
+
     setLoading(true);
     
-    // Check if Razorpay script is loaded
     if (!(window as any).Razorpay) {
-      toast({ variant: "destructive", title: "Payment Error", description: "Razorpay script not loaded. Please refresh." });
+      toast({ variant: "destructive", title: "Terminal Error", description: "Payment bridge (Razorpay) not found." });
       setLoading(false);
       return;
     }
 
     const options = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_dummy",
-      amount: 299 * 100, // Amount in paise
+      key: "rzp_test_dummy", // In production, this would be an env var
+      amount: 299 * 100,
       currency: "INR",
-      name: "HackSync Reg",
-      description: "Hackathon Registration Fee",
-      image: "https://picsum.photos/seed/hacksync/200/200",
+      name: "BYTEPUNK 2024",
+      description: "24H HACKATHON ACCESS FEE",
+      image: "https://picsum.photos/seed/bytepunk/200/200",
       handler: async function (response: any) {
-        // Payment success
         try {
-          await addDoc(collection(db, "participants"), {
+          const participantsRef = collection(firestore, "participants");
+          addDocumentNonBlocking(participantsRef, {
             ...data,
+            id: user.uid, // Map participant doc ID to auth UID as per backend.json
             paymentId: response.razorpay_payment_id,
             paymentStatus: "completed",
             registrationFee: 299,
@@ -135,10 +149,12 @@ export function RegistrationForm() {
             createdAt: serverTimestamp(),
             submittedAt: new Date().toISOString(),
           });
-          toast({ title: "Registration Successful!", description: "Welcome to the hackathon." });
-          window.location.href = "/dashboard";
+          toast({ title: "LINK ESTABLISHED", description: "Welcome to BytePunk. Terminal access granted." });
+          setTimeout(() => {
+            window.location.href = "/dashboard";
+          }, 1500);
         } catch (error) {
-          toast({ variant: "destructive", title: "Firestore Error", description: "Payment recorded but data failed to save. Please contact support." });
+          toast({ variant: "destructive", title: "Data Corruption", description: "Payment clear but link failed. Contact system admin." });
         }
       },
       prefill: {
@@ -147,7 +163,7 @@ export function RegistrationForm() {
         contact: data.phone
       },
       theme: {
-        color: "#5E26D9"
+        color: "#fcee0a"
       },
       modal: {
         ondismiss: function() {
@@ -168,143 +184,141 @@ export function RegistrationForm() {
 
   return (
     <div className="w-full max-w-2xl mx-auto py-10 px-4">
-      <div className="mb-8 space-y-2">
-        <div className="flex justify-between items-center text-sm font-medium text-muted-foreground">
-          <span>Step {step} of 4</span>
-          <span>{Math.round(progress)}% Complete</span>
+      <div className="mb-10 space-y-4">
+        <div className="flex justify-between items-center text-xs font-black uppercase tracking-[0.2em] text-primary">
+          <span>DATA_LINK_PROGRESS: STEP_{step}_OF_4</span>
+          <span>{Math.round(progress)}%_STABLE</span>
         </div>
-        <Progress value={progress} className="h-2 bg-muted/50" />
+        <Progress value={progress} className="h-1 bg-primary/10" />
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)}>
         {step === 1 && (
-          <Card className="glass-card border-none shadow-xl animate-in fade-in slide-in-from-bottom-4">
-            <CardHeader>
-              <CardTitle>Personal Information</CardTitle>
-              <CardDescription>Tell us a bit about yourself</CardDescription>
+          <Card className="bg-card border-2 border-primary/20 rounded-none shadow-2xl animate-in fade-in zoom-in-95 duration-500">
+            <CardHeader className="border-b border-primary/10">
+              <CardTitle className="text-2xl font-black uppercase italic">01. Identity_Scan</CardTitle>
+              <CardDescription className="text-muted-foreground uppercase text-[10px] tracking-[0.2em]">Verify your presence in the physical realm.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="space-y-6 pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label>Full Name</Label>
-                  <Input {...form.register("fullName")} placeholder="John Doe" className="bg-muted/30" />
-                  {form.formState.errors.fullName && <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>}
+                  <Label className="uppercase text-xs font-bold tracking-widest">Full Name</Label>
+                  <Input {...form.register("fullName")} placeholder="CYBER_RUNNER" className="bg-background border-primary/20 rounded-none focus:border-primary transition-all" />
+                  {form.formState.errors.fullName && <p className="text-xs text-accent font-bold">{form.formState.errors.fullName.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input {...form.register("email")} placeholder="john@example.com" className="bg-muted/30" />
-                  {form.formState.errors.email && <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>}
+                  <Label className="uppercase text-xs font-bold tracking-widest">Email</Label>
+                  <Input {...form.register("email")} placeholder="runner@matrix.net" className="bg-background border-primary/20 rounded-none focus:border-primary transition-all" />
+                  {form.formState.errors.email && <p className="text-xs text-accent font-bold">{form.formState.errors.email.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input {...form.register("phone")} placeholder="+91 9876543210" className="bg-muted/30" />
-                  {form.formState.errors.phone && <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>}
+                  <Label className="uppercase text-xs font-bold tracking-widest">Phone</Label>
+                  <Input {...form.register("phone")} placeholder="+91_XXXXXXXXXX" className="bg-background border-primary/20 rounded-none focus:border-primary transition-all" />
+                  {form.formState.errors.phone && <p className="text-xs text-accent font-bold">{form.formState.errors.phone.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Gender</Label>
+                  <Label className="uppercase text-xs font-bold tracking-widest">Gender</Label>
                   <Select onValueChange={(v) => form.setValue("gender", v)} defaultValue={form.getValues("gender")}>
-                    <SelectTrigger className="bg-muted/30">
-                      <SelectValue placeholder="Select Gender" />
+                    <SelectTrigger className="bg-background border-primary/20 rounded-none">
+                      <SelectValue placeholder="CHOOSE_IDENTITY" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                    <SelectContent className="bg-card border-primary/20">
+                      <SelectItem value="male">MALE</SelectItem>
+                      <SelectItem value="female">FEMALE</SelectItem>
+                      <SelectItem value="other">NON_BINARY</SelectItem>
                     </SelectContent>
                   </Select>
-                  {form.formState.errors.gender && <p className="text-xs text-destructive">{form.formState.errors.gender.message}</p>}
+                  {form.formState.errors.gender && <p className="text-xs text-accent font-bold">{form.formState.errors.gender.message}</p>}
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Date of Birth</Label>
-                  <Input type="date" {...form.register("dateOfBirth")} className="bg-muted/30" />
-                  {form.formState.errors.dateOfBirth && <p className="text-xs text-destructive">{form.formState.errors.dateOfBirth.message}</p>}
+                  <Label className="uppercase text-xs font-bold tracking-widest">Date of Birth</Label>
+                  <Input type="date" {...form.register("dateOfBirth")} className="bg-background border-primary/20 rounded-none focus:border-primary" />
+                  {form.formState.errors.dateOfBirth && <p className="text-xs text-accent font-bold">{form.formState.errors.dateOfBirth.message}</p>}
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="flex justify-end">
-              <Button type="button" onClick={handleNext} className="bg-primary hover:bg-primary/90">
-                Continue <ArrowRight className="ml-2 h-4 w-4" />
+            <CardFooter className="flex justify-end border-t border-primary/10 mt-6 pt-6">
+              <Button type="button" onClick={handleNext} className="cyber-button bg-primary text-background font-black uppercase italic h-12 px-8">
+                Next_Phase <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </CardFooter>
           </Card>
         )}
 
         {step === 2 && (
-          <Card className="glass-card border-none shadow-xl animate-in fade-in slide-in-from-right-4">
-            <CardHeader>
-              <CardTitle>Academic Information</CardTitle>
-              <CardDescription>Your current educational status</CardDescription>
+          <Card className="bg-card border-2 border-primary/20 rounded-none shadow-2xl animate-in fade-in slide-in-from-right-10 duration-500">
+            <CardHeader className="border-b border-primary/10">
+              <CardTitle className="text-2xl font-black uppercase italic text-secondary">02. Academic_Nexus</CardTitle>
+              <CardDescription className="text-muted-foreground uppercase text-[10px] tracking-[0.2em]">Map your cognitive training background.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6 pt-6">
               <div className="space-y-2">
-                <Label>College / University</Label>
-                <Input {...form.register("college")} placeholder="Example University" className="bg-muted/30" />
-                {form.formState.errors.college && <p className="text-xs text-destructive">{form.formState.errors.college.message}</p>}
+                <Label className="uppercase text-xs font-bold tracking-widest">College / University</Label>
+                <Input {...form.register("college")} placeholder="TECH_ACADEMY_PRIME" className="bg-background border-primary/20 rounded-none" />
+                {form.formState.errors.college && <p className="text-xs text-accent font-bold">{form.formState.errors.college.message}</p>}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label>Degree</Label>
-                  <Input {...form.register("degree")} placeholder="B.Tech" className="bg-muted/30" />
-                  {form.formState.errors.degree && <p className="text-xs text-destructive">{form.formState.errors.degree.message}</p>}
+                  <Label className="uppercase text-xs font-bold tracking-widest">Degree</Label>
+                  <Input {...form.register("degree")} placeholder="B.TECH_COGNITIVE" className="bg-background border-primary/20 rounded-none" />
+                  {form.formState.errors.degree && <p className="text-xs text-accent font-bold">{form.formState.errors.degree.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Branch</Label>
-                  <Input {...form.register("branch")} placeholder="Computer Science" className="bg-muted/30" />
-                  {form.formState.errors.branch && <p className="text-xs text-destructive">{form.formState.errors.branch.message}</p>}
+                  <Label className="uppercase text-xs font-bold tracking-widest">Branch</Label>
+                  <Input {...form.register("branch")} placeholder="NEURAL_NETWORKS" className="bg-background border-primary/20 rounded-none" />
+                  {form.formState.errors.branch && <p className="text-xs text-accent font-bold">{form.formState.errors.branch.message}</p>}
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Year of Study</Label>
+                  <Label className="uppercase text-xs font-bold tracking-widest">Year of Study</Label>
                   <Select onValueChange={(v) => form.setValue("year", v)} defaultValue={form.getValues("year")}>
-                    <SelectTrigger className="bg-muted/30">
-                      <SelectValue placeholder="Select Year" />
+                    <SelectTrigger className="bg-background border-primary/20 rounded-none">
+                      <SelectValue placeholder="SELECT_LEVEL" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1st Year">1st Year</SelectItem>
-                      <SelectItem value="2nd Year">2nd Year</SelectItem>
-                      <SelectItem value="3rd Year">3rd Year</SelectItem>
-                      <SelectItem value="4th Year">4th Year</SelectItem>
-                      <SelectItem value="Graduate">Graduate</SelectItem>
+                    <SelectContent className="bg-card border-primary/20">
+                      <SelectItem value="1st Year">LEVEL_01</SelectItem>
+                      <SelectItem value="2nd Year">LEVEL_02</SelectItem>
+                      <SelectItem value="3rd Year">LEVEL_03</SelectItem>
+                      <SelectItem value="4th Year">LEVEL_04</SelectItem>
+                      <SelectItem value="Graduate">LEGACY_RUNNER</SelectItem>
                     </SelectContent>
                   </Select>
-                  {form.formState.errors.year && <p className="text-xs text-destructive">{form.formState.errors.year.message}</p>}
+                  {form.formState.errors.year && <p className="text-xs text-accent font-bold">{form.formState.errors.year.message}</p>}
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="flex justify-between">
-              <Button type="button" variant="ghost" onClick={handleBack}>
+            <CardFooter className="flex justify-between border-t border-primary/10 mt-6 pt-6">
+              <Button type="button" variant="ghost" onClick={handleBack} className="uppercase font-bold tracking-widest rounded-none hover:bg-white/5">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
-              <Button type="button" onClick={handleNext} className="bg-primary hover:bg-primary/90">
-                Continue <ArrowRight className="ml-2 h-4 w-4" />
+              <Button type="button" onClick={handleNext} className="cyber-button bg-primary text-background font-black uppercase italic h-12 px-8">
+                Next_Phase <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </CardFooter>
           </Card>
         )}
 
         {step === 3 && (
-          <Card className="glass-card border-none shadow-xl animate-in fade-in slide-in-from-right-4">
-            <CardHeader>
-              <CardTitle className="flex justify-between items-center">
-                Team Information
-                <Button type="button" variant="outline" size="sm" onClick={generateAITeamNames} disabled={teamNameLoading} className="glass-card">
+          <Card className="bg-card border-2 border-primary/20 rounded-none shadow-2xl animate-in fade-in slide-in-from-right-10 duration-500">
+            <CardHeader className="border-b border-primary/10">
+              <CardTitle className="text-2xl font-black uppercase italic text-accent flex justify-between items-center">
+                03. Team_Sync
+                <Button type="button" variant="outline" size="sm" onClick={generateAITeamNames} disabled={teamNameLoading} className="border-accent text-accent hover:bg-accent/10 rounded-none uppercase text-[10px] font-black tracking-widest h-8 px-3">
                   {teamNameLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                  AI Names
+                  AI_GEN_NAME
                 </Button>
               </CardTitle>
-              <CardDescription>Collaborate with others (Min 1, Max 4 total)</CardDescription>
+              <CardDescription className="text-muted-foreground uppercase text-[10px] tracking-[0.2em]">Assemble your strike team (Max 4).</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-8 pt-6">
               <div className="space-y-2">
-                <Label>Team Name</Label>
-                <div className="flex gap-2">
-                  <Input {...form.register("teamName")} placeholder="Cyber Samurai" className="bg-muted/30" />
-                </div>
-                {form.formState.errors.teamName && <p className="text-xs text-destructive">{form.formState.errors.teamName.message}</p>}
+                <Label className="uppercase text-xs font-bold tracking-widest">Team Callsign</Label>
+                <Input {...form.register("teamName")} placeholder="NEON_SAMURAIS" className="bg-background border-primary/20 rounded-none text-xl font-black italic text-primary" />
+                {form.formState.errors.teamName && <p className="text-xs text-accent font-bold">{form.formState.errors.teamName.message}</p>}
                 
                 {aiSuggestions.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-2 mt-4">
                     {aiSuggestions.map((name, i) => (
-                      <Button key={i} type="button" variant="secondary" size="sm" onClick={() => form.setValue("teamName", name)} className="text-xs">
+                      <Button key={i} type="button" variant="secondary" size="sm" onClick={() => form.setValue("teamName", name)} className="text-[10px] bg-primary/5 hover:bg-primary/20 rounded-none border border-primary/10 uppercase font-bold tracking-tighter">
                         {name}
                       </Button>
                     ))}
@@ -312,9 +326,11 @@ export function RegistrationForm() {
                 )}
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                  <Label className="text-base font-semibold">Team Members</Label>
+                  <Label className="uppercase text-sm font-black tracking-widest flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-primary" /> Strike_Members
+                  </Label>
                   <Button 
                     type="button" 
                     variant="outline" 
@@ -323,80 +339,80 @@ export function RegistrationForm() {
                       if (fields.length < 3) append({ name: "", email: "" });
                     }}
                     disabled={fields.length >= 3}
-                    className="glass-card"
+                    className="border-primary text-primary hover:bg-primary/10 rounded-none h-8"
                   >
-                    <Plus className="h-4 w-4 mr-1" /> Add Member
+                    <Plus className="h-4 w-4 mr-1" /> Add_Unit
                   </Button>
                 </div>
 
                 {fields.map((field, index) => (
-                  <div key={field.id} className="p-4 rounded-lg bg-muted/20 border border-white/5 space-y-4 animate-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Member #{index + 2}</span>
-                      <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="h-8 w-8 text-destructive">
+                  <div key={field.id} className="p-6 bg-primary/5 border border-primary/10 rounded-none space-y-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="h-8 w-8 text-accent hover:text-accent hover:bg-accent/10">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label>Name</Label>
-                        <Input {...form.register(`teamMembers.${index}.name`)} placeholder="Jane Smith" className="bg-muted/30" />
+                        <Label className="uppercase text-[10px] font-bold tracking-widest opacity-70">Unit_{index + 2}_Name</Label>
+                        <Input {...form.register(`teamMembers.${index}.name`)} placeholder="CO-PILOT" className="bg-background border-primary/10 rounded-none" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input {...form.register(`teamMembers.${index}.email`)} placeholder="jane@nc.net" className="bg-muted/30" />
+                        <Label className="uppercase text-[10px] font-bold tracking-widest opacity-70">Unit_{index + 2}_Email</Label>
+                        <Input {...form.register(`teamMembers.${index}.email`)} placeholder="unit@matrix.net" className="bg-background border-primary/10 rounded-none" />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             </CardContent>
-            <CardFooter className="flex justify-between">
-              <Button type="button" variant="ghost" onClick={handleBack}>
+            <CardFooter className="flex justify-between border-t border-primary/10 mt-6 pt-6">
+              <Button type="button" variant="ghost" onClick={handleBack} className="uppercase font-bold tracking-widest rounded-none hover:bg-white/5">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
-              <Button type="button" onClick={handleNext} className="bg-primary hover:bg-primary/90">
-                Continue <ArrowRight className="ml-2 h-4 w-4" />
+              <Button type="button" onClick={handleNext} className="cyber-button bg-primary text-background font-black uppercase italic h-12 px-8">
+                Next_Phase <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </CardFooter>
           </Card>
         )}
 
         {step === 4 && (
-          <Card className="glass-card border-none shadow-xl animate-in fade-in slide-in-from-right-4">
-            <CardHeader>
-              <CardTitle>Final Touches</CardTitle>
-              <CardDescription>Share your profiles and complete payment</CardDescription>
+          <Card className="bg-card border-2 border-primary/20 rounded-none shadow-2xl animate-in fade-in slide-in-from-right-10 duration-500">
+            <CardHeader className="border-b border-primary/10">
+              <CardTitle className="text-2xl font-black uppercase italic">04. Final_Auth</CardTitle>
+              <CardDescription className="text-muted-foreground uppercase text-[10px] tracking-[0.2em]">Secure your uplink and initiate payment.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6 pt-6">
               <div className="space-y-2">
-                <Label>LinkedIn Profile (Optional)</Label>
-                <Input {...form.register("linkedinProfile")} placeholder="https://linkedin.com/in/..." className="bg-muted/30" />
+                <Label className="uppercase text-xs font-bold tracking-widest">LinkedIn Uplink</Label>
+                <Input {...form.register("linkedinProfile")} placeholder="https://linkedin.com/in/..." className="bg-background border-primary/20 rounded-none" />
               </div>
               <div className="space-y-2">
-                <Label>GitHub Profile (Optional)</Label>
-                <Input {...form.register("githubProfile")} placeholder="https://github.com/..." className="bg-muted/30" />
-              </div>
-              <div className="space-y-2">
-                <Label>Portfolio Website (Optional)</Label>
-                <Input {...form.register("portfolioWebsite")} placeholder="https://..." className="bg-muted/30" />
+                <Label className="uppercase text-xs font-bold tracking-widest">GitHub Repository</Label>
+                <Input {...form.register("githubProfile")} placeholder="https://github.com/..." className="bg-background border-primary/20 rounded-none" />
               </div>
 
-              <div className="mt-8 p-6 rounded-2xl bg-primary/10 border border-primary/20 space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-lg font-medium">Registration Fee</span>
-                  <span className="text-2xl font-bold text-secondary">₹299.00</span>
+              <div className="mt-8 p-8 border-2 border-primary bg-primary/5 relative overflow-hidden">
+                <div className="absolute top-0 right-0 bg-primary text-background px-4 py-1 font-black italic text-xs uppercase">Official_Access</div>
+                <div className="flex justify-between items-end">
+                  <div className="space-y-1">
+                    <span className="text-xs uppercase font-black tracking-[0.2em] opacity-70">Registration_Fee</span>
+                    <h4 className="text-4xl font-black italic text-primary">₹299.00</h4>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground max-w-[200px]">Includes 24h terminal access, energy kits, and cloud infrastructure credits.</p>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">This fee covers event access, kits, workshops, and cloud credits.</p>
               </div>
             </CardContent>
-            <CardFooter className="flex justify-between">
-              <Button type="button" variant="ghost" onClick={handleBack} disabled={loading}>
+            <CardFooter className="flex justify-between border-t border-primary/10 mt-6 pt-6">
+              <Button type="button" variant="ghost" onClick={handleBack} disabled={loading} className="uppercase font-bold tracking-widest rounded-none">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
-              <Button type="submit" size="lg" className="bg-secondary text-secondary-foreground hover:bg-secondary/90 font-bold" disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                Pay & Register
+              <Button type="submit" size="lg" className="cyber-button bg-primary text-background font-black uppercase italic h-16 px-10 shadow-[0_0_20px_rgba(252,238,10,0.3)] hover:scale-105" disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <CreditCard className="mr-2 h-6 w-6" />}
+                Initiate_Registration
               </Button>
             </CardFooter>
           </Card>
