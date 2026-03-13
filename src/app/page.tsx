@@ -36,7 +36,7 @@ export default function Home() {
           <div className="space-y-6 max-w-4xl animate-in fade-in slide-in-from-bottom-10 duration-1000">
             <div className="inline-flex items-center space-x-2 bg-primary/10 border border-primary/20 px-4 py-1.5 rounded-none mb-4">
               <Zap className="h-4 w-4 text-primary animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-[0.3em] text-primary">Status: System Online // 2024.04.10</span>
+              <span className="text-xs font-bold uppercase tracking-[0.3em] text-primary">Status: System Online // 2026.04.10</span>
             </div>
             
             <h1 className="text-6xl font-black tracking-tighter sm:text-7xl md:text-8xl lg:text-9xl uppercase italic leading-[0.8]">
@@ -105,7 +105,7 @@ export default function Home() {
             <Cpu className="h-5 w-5 text-primary" />
             <span className="text-xl font-black italic text-primary">BYTEPUNK_CORP</span>
           </div>
-          <p className="text-xs uppercase font-bold tracking-[0.5em] text-muted-foreground">© 2024 NEON_DISTRICT. ALL RIGHTS RESERVED.</p>
+          <p className="text-xs uppercase font-bold tracking-[0.5em] text-muted-foreground">© 2026 NEON_DISTRICT. ALL RIGHTS RESERVED.</p>
         </div>
       </footer>
     </div>

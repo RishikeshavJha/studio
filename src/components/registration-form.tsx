@@ -113,6 +113,15 @@ export function RegistrationForm() {
     }
   };
 
+  const generateParticipationId = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = 'BP2026';
+    for (let i = 0; i < 8; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
   const processPayment = async (data: FormValues) => {
     if (!user) {
       toast({ variant: "destructive", title: "Auth Required", description: "You must be jacked in (logged in) to register." });
@@ -121,64 +130,34 @@ export function RegistrationForm() {
 
     setLoading(true);
     
-    // In a real app, you would create an order on your server first.
-    // Here we use the Razorpay Checkout directly for prototyping.
-    if (!(window as any).Razorpay) {
-      toast({ variant: "destructive", title: "Terminal Error", description: "Payment bridge (Razorpay) not found." });
+    try {
+      const participationId = generateParticipationId();
+      const participantDocRef = doc(firestore, "participants", user.uid);
+      
+      // Save user data to Firebase without requiring payment
+      await setDoc(participantDocRef, {
+        ...data,
+        id: user.uid,
+        participationId: participationId,
+        paymentId: "test_payment_" + Date.now(),
+        paymentStatus: "test_completed",
+        registrationFee: 299,
+        currency: "INR",
+        createdAt: serverTimestamp(),
+        submittedAt: new Date().toISOString(),
+        eventDate: "2026-04-10",
+        testMode: true
+      }, { merge: true });
+
+      toast({ title: "DATA_SAVED", description: `Registration complete! Your Participation ID: ${participationId}` });
+      setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 1500);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Database Error", description: error.message || "Failed to save data to Firebase." });
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const options = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_dummy", 
-      amount: 299 * 100,
-      currency: "INR",
-      name: "BYTEPUNK 2024",
-      description: "24H HACKATHON ACCESS FEE",
-      image: "https://picsum.photos/seed/bytepunk/200/200",
-      handler: async function (response: any) {
-        try {
-          const participantDocRef = doc(firestore, "participants", user.uid);
-          
-          // Using setDoc with merge to ensure the document maps to the auth UID
-          await setDoc(participantDocRef, {
-            ...data,
-            id: user.uid,
-            paymentId: response.razorpay_payment_id,
-            paymentStatus: "completed",
-            registrationFee: 299,
-            currency: "INR",
-            createdAt: serverTimestamp(),
-            submittedAt: new Date().toISOString(),
-          }, { merge: true });
-
-          toast({ title: "LINK ESTABLISHED", description: "Welcome to BytePunk. Terminal access granted." });
-          setTimeout(() => {
-            window.location.href = "/dashboard";
-          }, 1500);
-        } catch (error: any) {
-          toast({ variant: "destructive", title: "Data Corruption", description: error.message || "Payment clear but link failed." });
-        } finally {
-          setLoading(false);
-        }
-      },
-      prefill: {
-        name: data.fullName,
-        email: data.email,
-        contact: data.phone
-      },
-      theme: {
-        color: "#fcee0a"
-      },
-      modal: {
-        ondismiss: function() {
-          setLoading(false);
-        }
-      }
-    };
-
-    const rzp = new (window as any).Razorpay(options);
-    rzp.open();
   };
 
   const onSubmit = (data: FormValues) => {
@@ -417,7 +396,7 @@ export function RegistrationForm() {
               </Button>
               <Button type="submit" size="lg" className="cyber-button bg-primary text-background font-black uppercase italic h-16 px-10 shadow-[0_0_20px_rgba(252,238,10,0.3)] hover:scale-105" disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <CreditCard className="mr-2 h-6 w-6" />}
-                Initiate_Registration
+                Save_Data_To_Database
               </Button>
             </CardFooter>
           </Card>
