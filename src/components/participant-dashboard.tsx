@@ -1,26 +1,40 @@
+
 "use client";
 
 import { useState } from "react";
-import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, orderBy, query, limit } from "firebase/firestore";
+import { useFirestore, useCollection, useMemoFirebase, useUser, useDoc } from "@/firebase";
+import { collection, orderBy, query, limit, doc } from "firebase/firestore";
 import { 
   Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, Users, CreditCard, Calendar, ArrowUpRight, Cpu, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, Users, CreditCard, Calendar, ArrowUpRight, Cpu, Activity, ShieldAlert, ShieldCheck, Lock } from "lucide-react";
 import { format } from "date-fns";
+import Link from "next/link";
 
 export function ParticipantDashboard() {
   const [search, setSearch] = useState("");
   const firestore = useFirestore();
+  const { user, isUserLoading } = useUser();
 
+  // Check if current user is an admin
+  const adminDocRef = useMemoFirebase(() => {
+    return user ? doc(firestore, "admins", user.uid) : null;
+  }, [firestore, user]);
+
+  const { data: adminDoc, isLoading: isAdminLoading } = useDoc(adminDocRef);
+  const isAdmin = !!adminDoc;
+
+  // Only query participants if user is a verified admin
   const participantsQuery = useMemoFirebase(() => {
+    if (!isAdmin) return null;
     return query(collection(firestore, "participants"), orderBy("createdAt", "desc"), limit(100));
-  }, [firestore]);
+  }, [firestore, isAdmin]);
 
-  const { data: participants, isLoading } = useCollection(participantsQuery);
+  const { data: participants, isLoading: isDataLoading } = useCollection(participantsQuery);
 
   const filteredParticipants = participants?.filter(p => 
     p.fullName?.toLowerCase().includes(search.toLowerCase()) || 
@@ -30,6 +44,49 @@ export function ParticipantDashboard() {
 
   const totalFee = participants?.reduce((acc, p) => acc + (p.registrationFee || 0), 0) || 0;
   const totalMembers = participants?.reduce((acc, p) => acc + (p.teamMembers?.length + 1 || 1), 0) || 0;
+
+  if (isUserLoading || isAdminLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <Cpu className="h-12 w-12 text-primary animate-spin" />
+        <p className="text-xs font-black uppercase tracking-[0.3em] text-primary">Decrypting_Admin_Access...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Card className="bg-card border-2 border-accent/20 rounded-none p-12 text-center max-w-lg mx-auto">
+        <Lock className="h-16 w-16 text-accent mx-auto mb-6" />
+        <CardTitle className="text-2xl font-black uppercase italic mb-2">Access_Denied</CardTitle>
+        <CardDescription className="uppercase text-xs font-bold tracking-widest mb-8">
+          You must be authenticated to access the administrative terminal.
+        </CardDescription>
+        <Link href="/login">
+          <Button className="cyber-button bg-primary text-background font-black uppercase italic w-full">
+            Return_To_Login
+          </Button>
+        </Link>
+      </Card>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <Card className="bg-card border-2 border-accent/20 rounded-none p-12 text-center max-w-lg mx-auto">
+        <ShieldAlert className="h-16 w-16 text-accent mx-auto mb-6" />
+        <CardTitle className="text-2xl font-black uppercase italic mb-2">Authorization_Failure</CardTitle>
+        <CardDescription className="uppercase text-xs font-bold tracking-widest mb-8 text-muted-foreground">
+          Current credentials lack required privileges for Participant_Nexus. Contact system administrator for elevation.
+        </CardDescription>
+        <Link href="/">
+          <Button variant="outline" className="rounded-none border-primary text-primary hover:bg-primary/10 uppercase font-black w-full">
+            Return_To_Surface
+          </Button>
+        </Link>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-10 animate-in fade-in duration-700">
@@ -84,7 +141,7 @@ export function ParticipantDashboard() {
         <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-primary/10 pb-6">
           <div className="space-y-1">
             <CardTitle className="text-2xl font-black uppercase italic flex items-center gap-3">
-              <Cpu className="h-6 w-6 text-primary" /> Participant_Nexus
+              <ShieldCheck className="h-6 w-6 text-primary" /> Participant_Nexus
             </CardTitle>
             <CardDescription className="uppercase text-[10px] font-bold tracking-widest text-muted-foreground">Sub-grid monitor for all active registration logs.</CardDescription>
           </div>
@@ -110,7 +167,7 @@ export function ParticipantDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isDataLoading ? (
                 <TableRow>
                   <TableCell colSpan={5} className="h-40 text-center uppercase font-bold tracking-widest text-primary animate-pulse">
                     Scanning_Encrypted_Channels...
